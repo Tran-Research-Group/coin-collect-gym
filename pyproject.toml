@@ -10,6 +10,9 @@ packages = [{include = "coin_collect_gym"}]
 [tool.poetry.dependencies]
 python = "^3.10,<3.11"
 gymnasium = "^0.28.1"
+matplotlib = "^3.7.1"
+seaborn = "^0.12.2"
+imageio = "^2.28.1"
 
 
 [build-system]
