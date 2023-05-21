@@ -21,6 +21,7 @@ from collect_coin_gym.types import (
     Move,
     ObjectId,
     ObjectSpawnQuadrants,
+    PeerPolicy,
 )
 
 
@@ -53,6 +54,7 @@ class CollectCoinEnv(gym.Env):
         step_penalty: float = 0.01,
         is_move_clipped: bool = True,
         agent_stays: bool = False,
+        peer_policy: PeerPolicy = "random",
         num_max_steps: int = 300,
         observation_space: spaces.Dict | None = None,
         render_mode: Literal["human", "rgb_array"] = "human",
@@ -80,6 +82,8 @@ class CollectCoinEnv(gym.Env):
             Whether the agent is clipped when it tries to move out of the map.
         agent_stays : bool = False
             Whether the agent can stay at the same location.
+        peer_policy : PeerPolicy = "random"
+            The policy of the peer agent. "random" is for random action. "stay" is for staying at the same location.
         num_max_steps : int = 300
             The maximum number of steps.
         observation_space : spaces.Dict | None = None

@@ -49,3 +49,6 @@ class ObjectSpawnQuadrants(NamedTuple):
     red_coin: Quadrant
     green_coin: Quadrant
     blue_coin: Quadrant
+
+
+PeerPolicy: TypeAlias = Literal["random", "stay"]
