@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "coin-collect-gym"
+version = "0.1.0"
+description = "Gym env for multigrid coin collection game"
+authors = ["Mikihisa Yuasa 湯淺幹久 <mik0915yua@outlook.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "coin_collect_gym"}]
+
+[tool.poetry.dependencies]
+python = "^3.10,<3.11"
+gymnasium = "^0.28.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
