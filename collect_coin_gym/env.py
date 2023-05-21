@@ -5,7 +5,7 @@ from typing import Final, Literal
 
 
 import numpy as np
-from numpy import ndarray
+from numpy import ndarray, integer
 import gymnasium as gym
 from gymnasium import spaces
 from matplotlib import pyplot as plt
@@ -16,7 +16,12 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 import seaborn as sns
 
-from collect_coin_gym.types import Location, Move, ObjectId, ObjectSpawnQuadrants
+from collect_coin_gym.types import (
+    Location,
+    Move,
+    ObjectId,
+    ObjectSpawnQuadrants,
+)
 
 
 # The Element IDs
@@ -28,11 +33,8 @@ from collect_coin_gym.types import Location, Move, ObjectId, ObjectSpawnQuadrant
 # BLUE_COIN = 5
 # BORDER = 6
 
-default_obj_id = ObjectId(0, 1, 2, 3, 4, 5, 6)
+default_obj_id = ObjectId(0, 1, 2, 3, 4, 5)
 default_obj_spawn_quads = ObjectSpawnQuadrants(3, 3, 2, 1, 4)
-
-# 0: up, 1: right, 2: down, 3: left
-default_moves: tuple[Move, ...] = (Move(1, 0), Move(0, 1), Move(-1, 0), Move(0, -1))
 
 
 class CollectCoinEnv(gym.Env):
@@ -42,14 +44,15 @@ class CollectCoinEnv(gym.Env):
 
     def __init__(
         self,
+        num_coins: int,
         map_shape: tuple[int, int] = (10, 10),
         obj_id: ObjectId = default_obj_id,
-        moves: tuple[Move, ...] = default_moves,
         obj_spawn_quads: ObjectSpawnQuadrants = default_obj_spawn_quads,
         quad_spawn_prob: float = 0.7,
         coin_collect_reward: float = 1.0,
         step_penalty: float = 0.01,
         is_move_clipped: bool = True,
+        agent_stays: bool = False,
         num_max_steps: int = 300,
         observation_space: spaces.Dict | None = None,
         render_mode: Literal["human", "rgb_array"] = "human",
@@ -59,14 +62,14 @@ class CollectCoinEnv(gym.Env):
 
         Parameters
         ----------
+        num_coins : int
+            The number of coins for each color.
         map_shape : tuple[int, int] = (10, 10)
             The shape of the map. The first element is the number of rows and the second element is the number of columns. Even values are preferred to split the map into four quadrants.
         obj_id : ObjectId = default_obj_id
-            The object IDs. The default values are: BACKGROUND = 0, BLUE_AGENT = 1, RED_AGENT = 2, RED_COIN = 3, GREEN_COIN = 4, BLUE_COIN = 5, BORDER = 6.
-        moves : tuple[Move, ...] = default_moves
-            The moves. The default values are: 0: up, 1: right, 2: down, 3: left.
+            The object IDs. The default values are: BORDER = 0, BLUE_AGENT = 1, RED_AGENT = 2, RED_COIN = 3, GREEN_COIN = 4, BLUE_COIN = 5.
         obj_spawn_quads : ObjectSpawnQuadrants = default_obj_spawn_quads
-            The quadrants where the objects are spawned. The default values are: BLUE_AGENT = 3, RED_AGENT = 3, RED_COIN = 2, GREEN_COIN = 1, BLUE_COIN = 4.
+            The quadrants where the objects are spawned. The default values are: BLUE_AGENT = 3, RED_AGENT = 3, RED_COIN = 2, GREEN_COIN = 1, BLUE_COIN = 4. 0: random, 1: upper-right, 2: upper-left, 3: lower-left, 4: lower-right.
         quad_spawn_prob : float = 0.7
             The probability of the object to be spawned in the quadrant specified by obj_spawn_quads.
         coin_collect_reward : float = 1.0
@@ -75,6 +78,8 @@ class CollectCoinEnv(gym.Env):
             The penalty for each step.
         is_move_clipped : bool = True
             Whether the agent is clipped when it tries to move out of the map.
+        agent_stays : bool = False
+            Whether the agent can stay at the same location.
         num_max_steps : int = 300
             The maximum number of steps.
         observation_space : spaces.Dict | None = None
@@ -85,85 +90,84 @@ class CollectCoinEnv(gym.Env):
         """
         super().__init__()
 
+        self._map_shape: Final[tuple[int, int]] = map_shape
+        self._obj_id: Final[ObjectId] = obj_id
+        self._obj_spawn_quads: Final[ObjectSpawnQuadrants] = obj_spawn_quads
+        self._quad_spawn_prob: Final[float] = quad_spawn_prob
+        self._coin_collect_reward: Final[float] = coin_collect_reward
+        self._step_penalty: Final[float] = step_penalty
         self._is_move_clipped: Final[bool] = is_move_clipped
+        self._agent_stays: Final[bool] = agent_stays
         self._num_max_steps: Final[int] = num_max_steps
         self._render_mode: Final[Literal["human", "rgb_array"]] = render_mode
 
-        self._field_map: Final[ndarray] = np.loadtxt(map_path)
-
-        self._moves: tuple[Move, ...] = moves
-
-        self.action_space = spaces.Discrete(len(self._moves))
-
-        self._obj_id = obj_id
-
-        obstacle: Final[list[Location]] = tuples2locs(
-            list(zip(*np.where(self._field_map == self._object_id.obstacle)))  # type: ignore
+        # 0: up, 1: right, 2: down, 3: left, 4: stay
+        self._actions: Final[tuple[Move, ...]] = (
+            (Move(1, 0), Move(0, 1), Move(-1, 0), Move(0, -1))
+            if not self._agent_stays
+            else (Move(1, 0), Move(0, 1), Move(-1, 0), Move(0, -1), Move(0, 0))
         )
-        blue_flag: Final[Location] = tuples2locs(
-            list(zip(*np.where(self._field_map == self._object_id.blue_flag)))  # type: ignore
-        )[0]
 
-        red_flag: Final[Location] = tuples2locs(
-            list(zip(*np.where(self._field_map == self._object_id.red_flag)))  # type: ignore
-        )[0]
-        blue_background: Final[list[Location]] = tuples2locs(
-            list(zip(*np.where(self._field_map == self._object_id.blue_background)))  # type: ignore
-        ) + [blue_flag]
-        red_background: Final[list[Location]] = tuples2locs(
-            list(zip(*np.where(self._field_map == self._object_id.red_background)))  # type: ignore
-        ) + [red_flag]
+        self.action_space = spaces.Discrete(len(self._actions))
 
-        h, w = self._field_map.shape
-        if w % 2 != 0:
-            raise Exception("[tl_search] The map shape should be in odds.")
-        else:
-            pass
+        h, w = map_shape
 
-        wall: Final[list[Location]] = list(
+        self._border: Final[list[Location]] = list(
             set(
-                [Location(-1, i) for i in range(-1, w + 1)]
-                + [Location(h, i) for i in range(-1, w + 1)]
-                + [Location(i, -1) for i in range(-1, h + 1)]
-                + [Location(i, w) for i in range(-1, h + 1)]
+                [Location(0, i) for i in range(0, w)]
+                + [Location(h - 1, i) for i in range(0, w)]
+                + [Location(i, 0) for i in range(0, h)]
+                + [Location(i, w - 1) for i in range(0, h)]
             )
-        )
-
-        self._fixed_obj: Final[FixedObj] = FixedObj(
-            blue_background, red_background, blue_flag, red_flag, obstacle, wall
         )
 
         self.observation_space: Final = (
             spaces.Dict(
                 {
                     "blue_agent": spaces.Box(
-                        low=np.array([-1, -1]), high=np.array(self._field_map.shape) - 1, dtype=int  # type: ignore
+                        low=np.array([-1, -1]),
+                        high=np.array(self._map_shape) - 1,
+                        dtype=integer,
                     ),
                     "red_agent": spaces.Box(
-                        low=np.array([-1, -1]), high=np.array(self._field_map.shape) - 1, dtype=int  # type: ignore
+                        low=np.array([-1, -1]),
+                        high=np.array(self._map_shape) - 1,
+                        dtype=integer,
                     ),
-                    "blue_flag": spaces.Box(
-                        low=np.array([0, 0]), high=np.array(self._field_map.shape) - 1, dtype=int  # type: ignore
+                    "border": spaces.Box(
+                        low=np.array(
+                            [[0, 0] for _ in range(len(self._border))]
+                        ).flatten(),
+                        high=np.array(
+                            [self._map_shape for _ in range(len(self._border))]
+                        ).flatten()
+                        - 1,
+                        dtype=integer,
                     ),
-                    "red_flag": spaces.Box(
-                        low=np.array([0, 0]), high=np.array(self._field_map.shape) - 1, dtype=int  # type: ignore
+                    "red_coins": spaces.Box(
+                        low=np.array([[0, 0] for _ in range(num_coins)]).flatten(),
+                        high=np.array(
+                            [self._map_shape for _ in range(num_coins)]
+                        ).flatten()
+                        - 1,
+                        dtype=integer,
                     ),
-                    "blue_background": spaces.Box(
-                        low=np.array(list(chain.from_iterable([[0, 0] for _ in range(len(blue_background))]))),  # type: ignore
-                        high=np.array(list(chain.from_iterable([self._field_map.shape for _ in range(len(blue_background))]))).flatten() - 1,  # type: ignore
-                        dtype=int,  # type: ignore
+                    "green_coins": spaces.Box(
+                        low=np.array([[0, 0] for _ in range(num_coins)]).flatten(),
+                        high=np.array(
+                            [self._map_shape for _ in range(num_coins)]
+                        ).flatten()
+                        - 1,
+                        dtype=integer,
                     ),
-                    "red_background": spaces.Box(
-                        low=np.array(list(chain.from_iterable([[0, 0] for _ in range(len(red_background))]))),  # type: ignore
-                        high=np.array(list(chain.from_iterable([self._field_map.shape for _ in range(len(red_background))]))).flatten() - 1,  # type: ignore
-                        dtype=int,  # type: ignore
+                    "blue_coins": spaces.Box(
+                        low=np.array([[0, 0] for _ in range(num_coins)]).flatten(),
+                        high=np.array(
+                            [self._map_shape for _ in range(num_coins)]
+                        ).flatten()
+                        - 1,
+                        dtype=integer,
                     ),
-                    "obstacle": spaces.Box(
-                        low=np.array(list(chain.from_iterable([[0, 0] for _ in range(len(obstacle))]))),  # type: ignore
-                        high=np.array(list(chain.from_iterable([self._field_map.shape for _ in range(len(obstacle))]))).flatten() - 1,  # type: ignore
-                        dtype=int,  # type: ignore
-                    ),
-                    "is_red_agent_defeated": spaces.Discrete(2),
                 }
             )
             if observation_space is None

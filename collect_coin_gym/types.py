@@ -15,13 +15,12 @@ class Move(NamedTuple):
 
 
 class ObjectId(NamedTuple):
-    background: int
+    border: int
     blue_agent: int
     red_agent: int
     red_coin: int
     green_coin: int
     blue_coin: int
-    border: int
 
 
 class FieldObject(NamedTuple):
@@ -35,6 +34,13 @@ class FieldObject(NamedTuple):
 
 
 Quadrant: TypeAlias = Literal[0, 1, 2, 3, 4]
+
+
+class Quadrants(NamedTuple):
+    first: list[Location]
+    second: list[Location]
+    third: list[Location]
+    fourth: list[Location]
 
 
 class ObjectSpawnQuadrants(NamedTuple):
